@@ -8,6 +8,7 @@
     "dev:api": "tsx server/index.ts",
     "dev:web": "vite --host 127.0.0.1",
     "build": "tsc && vite build",
+    "start": "node src/server.js",
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc --noEmit"
   },

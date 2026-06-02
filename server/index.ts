@@ -1,5 +1,7 @@
 import cors from "cors";
 import express from "express";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   addComment,
   getCommentsForStory,
@@ -16,6 +18,8 @@ import type { MythEra, MythTheme } from "./types";
 
 const app = express();
 const port = Number(process.env.PORT || 4174);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const distPath = path.resolve(__dirname, "..", "dist");
 
 app.use(cors());
 app.use(express.json());
@@ -144,11 +148,17 @@ app.post("/api/auth/login", async (req, res, next) => {
   }
 });
 
+app.use(express.static(distPath));
+
+app.get(/^(?!\/api).*/, (_req, res) => {
+  res.sendFile(path.join(distPath, "index.html"));
+});
+
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(error);
   res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
 });
 
-app.listen(port, "127.0.0.1", () => {
+app.listen(port, "0.0.0.0", () => {
   console.log(`Myth Atlas API running on http://127.0.0.1:${port}`);
 });
