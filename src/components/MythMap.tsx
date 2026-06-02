@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, type CSSProperties } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import landTopo from "world-atlas/land-110m.json";
@@ -14,8 +14,9 @@ interface MythMapProps {
   onSelectStory: (id: string) => void;
 }
 
-type MarkerProjection = Record<string, { x: number; y: number; visible: boolean; scale: number }>;
 type GlobeLabel = { id: string; name: string; lat: number; lng: number; kind: "continent" | "ocean" };
+type ProjectablePoint = { id: string; lat: number; lng: number; radius: number };
+type ScreenProjection = { id: string; x: number; y: number; visible: boolean; scale: number; frontFactor: number };
 
 const globeRadius = 2;
 
@@ -97,6 +98,16 @@ const latLngToVector = (lat: number, lng: number, radius = globeRadius) => {
   const phi = THREE.MathUtils.degToRad(90 - lat);
   const theta = THREE.MathUtils.degToRad(lng + 180);
   return new THREE.Vector3(
+    -radius * Math.sin(phi) * Math.cos(theta),
+    radius * Math.cos(phi),
+    radius * Math.sin(phi) * Math.sin(theta)
+  );
+};
+
+const setLatLngToVector = (target: THREE.Vector3, lat: number, lng: number, radius = globeRadius) => {
+  const phi = THREE.MathUtils.degToRad(90 - lat);
+  const theta = THREE.MathUtils.degToRad(lng + 180);
+  return target.set(
     -radius * Math.sin(phi) * Math.cos(theta),
     radius * Math.cos(phi),
     radius * Math.sin(phi) * Math.sin(theta)
@@ -359,10 +370,35 @@ export function MythMap({
   const globeGroupRef = useRef<THREE.Group | null>(null);
   const arcGroupRef = useRef<THREE.Group | null>(null);
   const animationRef = useRef<number | null>(null);
-  const [projections, setProjections] = useState<MarkerProjection>({});
-  const [labelProjections, setLabelProjections] = useState<MarkerProjection>({});
+  const markerRefs = useRef(new Map<string, HTMLButtonElement>());
+  const labelRefs = useRef(new Map<string, HTMLSpanElement>());
+  const viewportSizeRef = useRef({ width: 1, height: 1 });
+  const scratchVectorRef = useRef(new THREE.Vector3());
+  const scratchWorldRef = useRef(new THREE.Vector3());
+  const scratchProjectedRef = useRef(new THREE.Vector3());
+  const cameraDirectionRef = useRef(new THREE.Vector3());
+  const storyPointsRef = useRef<ProjectablePoint[]>([]);
+  const labelPointsRef = useRef<ProjectablePoint[]>([]);
+  const visibleMarkerIdsRef = useRef(new Set<string>());
+  const frameCounterRef = useRef(0);
 
   const storyLookup = useMemo(() => new Map(stories.map((story) => [story.id, story])), [stories]);
+  const storyPoints = useMemo<ProjectablePoint[]>(
+    () => stories.map((story) => ({ id: story.id, lat: story.lat, lng: story.lng, radius: globeRadius + 0.1 })),
+    [stories]
+  );
+  const labelPoints = useMemo<ProjectablePoint[]>(
+    () => globeLabels.map((label) => ({ id: label.id, lat: label.lat, lng: label.lng, radius: globeRadius + 0.04 })),
+    []
+  );
+
+  useEffect(() => {
+    storyPointsRef.current = storyPoints;
+  }, [storyPoints]);
+
+  useEffect(() => {
+    labelPointsRef.current = labelPoints;
+  }, [labelPoints]);
 
   useEffect(() => {
     if (!containerRef.current || rendererRef.current) return;
@@ -372,8 +408,8 @@ export function MythMap({
     const camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 0.1, 100);
     camera.position.set(0, 0.8, 5.4);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
@@ -389,7 +425,7 @@ export function MythMap({
 
     const globeGroup = new THREE.Group();
     const earth = new THREE.Mesh(
-      new THREE.SphereGeometry(globeRadius, 96, 96),
+      new THREE.SphereGeometry(globeRadius, 64, 64),
       new THREE.MeshStandardMaterial({
         map: makeEarthTexture(),
         bumpMap: makeBumpTexture(),
@@ -402,7 +438,6 @@ export function MythMap({
       })
     );
     globeGroup.add(earth);
-    globeGroup.add(makeLandLayer());
     globeGroup.add(makeGraticule());
 
     const atmosphere = new THREE.Sprite(
@@ -426,7 +461,7 @@ export function MythMap({
       new THREE.BufferGeometry().setAttribute(
         "position",
         new THREE.Float32BufferAttribute(
-          Array.from({ length: 1200 }, () => (Math.random() - 0.5) * 18),
+          Array.from({ length: 520 }, () => (Math.random() - 0.5) * 18),
           3
         )
       ),
@@ -454,9 +489,36 @@ export function MythMap({
     const updateSize = () => {
       const width = container.clientWidth;
       const height = container.clientHeight;
+      viewportSizeRef.current = { width, height };
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
+    };
+
+    const getProjection = (point: ProjectablePoint, cameraDirection: THREE.Vector3): ScreenProjection => {
+      const { width, height } = viewportSizeRef.current;
+      const localPoint = setLatLngToVector(scratchVectorRef.current, point.lat, point.lng, point.radius);
+      const worldPoint = scratchWorldRef.current.copy(localPoint).applyMatrix4(globeGroup.matrixWorld);
+      const frontFactor = scratchProjectedRef.current.copy(worldPoint).normalize().dot(cameraDirection);
+      const projected = scratchProjectedRef.current.copy(worldPoint).project(camera);
+      const x = ((projected.x + 1) / 2) * width;
+      const y = ((-projected.y + 1) / 2) * height;
+      const visible = projected.z < 1 && frontFactor > -0.08;
+      const scale = THREE.MathUtils.clamp(0.72 + frontFactor * 0.45, 0.48, 1.18);
+      return { id: point.id, x, y, visible, scale, frontFactor };
+    };
+
+    const applyProjection = (projection: ScreenProjection, element: HTMLElement, oceanLabel = false) => {
+      element.style.transform = `translate3d(${projection.x}px, ${projection.y}px, 0) translate(-50%, -50%) scale(${projection.scale})`;
+      element.style.opacity = projection.visible ? (oceanLabel ? "0.46" : "1") : "0";
+      element.style.pointerEvents = projection.visible && !oceanLabel ? "auto" : "none";
+    };
+
+    const hideMarker = (id: string) => {
+      const element = markerRefs.current.get(id);
+      if (!element) return;
+      element.style.opacity = "0";
+      element.style.pointerEvents = "none";
     };
 
     const animate = () => {
@@ -464,31 +526,43 @@ export function MythMap({
       stars.rotation.y += 0.00028;
       renderer.render(scene, camera);
 
-      const next: MarkerProjection = {};
-      const nextLabels: MarkerProjection = {};
-      const rect = renderer.domElement.getBoundingClientRect();
       globeGroup.updateMatrixWorld();
-      const projectPoint = (id: string, lat: number, lng: number, radius: number, output: MarkerProjection) => {
-        const localPoint = latLngToVector(lat, lng, radius);
-        const worldPoint = localPoint.clone().applyMatrix4(globeGroup.matrixWorld);
-        const projected = worldPoint.clone().project(camera);
-        const cameraDirection = camera.position.clone().normalize();
-        const frontFactor = worldPoint.clone().normalize().dot(cameraDirection);
-        output[id] = {
-          x: ((projected.x + 1) / 2) * rect.width,
-          y: ((-projected.y + 1) / 2) * rect.height,
-          visible: projected.z < 1 && frontFactor > -0.08,
-          scale: THREE.MathUtils.clamp(0.72 + frontFactor * 0.45, 0.48, 1.18)
-        };
-      };
-      for (const story of stories) {
-        projectPoint(story.id, story.lat, story.lng, globeRadius + 0.1, next);
+      frameCounterRef.current += 1;
+      if (frameCounterRef.current % 2 === 0) {
+        const cameraDirection = cameraDirectionRef.current.copy(camera.position).normalize();
+        const visibleCandidates: ScreenProjection[] = [];
+        for (const point of storyPointsRef.current) {
+          const projection = getProjection(point, cameraDirection);
+          if (projection.visible) visibleCandidates.push(projection);
+        }
+
+        visibleCandidates.sort((a, b) => b.frontFactor - a.frontFactor);
+        const selectedProjection = selectedStory
+          ? visibleCandidates.find((candidate) => candidate.id === selectedStory.id)
+          : undefined;
+        const activeCandidates = visibleCandidates.slice(0, 120);
+        if (selectedProjection && !activeCandidates.some((candidate) => candidate.id === selectedProjection.id)) {
+          activeCandidates.push(selectedProjection);
+        }
+
+        const nextVisibleIds = new Set<string>();
+        for (const projection of activeCandidates) {
+          const element = markerRefs.current.get(projection.id);
+          if (!element) continue;
+          applyProjection(projection, element);
+          nextVisibleIds.add(projection.id);
+        }
+        for (const id of visibleMarkerIdsRef.current) {
+          if (!nextVisibleIds.has(id)) hideMarker(id);
+        }
+        visibleMarkerIdsRef.current = nextVisibleIds;
+
+        for (const point of labelPointsRef.current) {
+          const element = labelRefs.current.get(point.id);
+          if (!element) continue;
+          applyProjection(getProjection(point, cameraDirection), element, element.classList.contains("ocean"));
+        }
       }
-      for (const label of globeLabels) {
-        projectPoint(label.id, label.lat, label.lng, globeRadius + 0.04, nextLabels);
-      }
-      setProjections(next);
-      setLabelProjections(nextLabels);
       animationRef.current = requestAnimationFrame(animate);
     };
 
@@ -509,7 +583,7 @@ export function MythMap({
       globeGroupRef.current = null;
       arcGroupRef.current = null;
     };
-  }, [stories]);
+  }, []);
 
   useEffect(() => {
     const arcGroup = arcGroupRef.current;
@@ -565,17 +639,13 @@ export function MythMap({
       <div className="globe-hint">拖拽旋转 / 滚轮缩放 / 点击故事光点</div>
       <div className="geo-label-layer">
         {globeLabels.map((label) => {
-          const projection = labelProjections[label.id];
-          if (!projection) return null;
           return (
             <span
               className={`geo-label ${label.kind}`}
               key={label.id}
-              style={{
-                left: projection.x,
-                top: projection.y,
-                opacity: projection.visible ? (label.kind === "ocean" ? 0.46 : 0.78) : 0,
-                transform: `translate(-50%, -50%) scale(${projection.scale})`
+              ref={(element) => {
+                if (element) labelRefs.current.set(label.id, element);
+                else labelRefs.current.delete(label.id);
               }}
             >
               {label.name}
@@ -585,20 +655,19 @@ export function MythMap({
       </div>
       <div className="globe-marker-layer">
         {stories.map((story) => {
-          const projection = projections[story.id];
-          if (!projection) return null;
           return (
             <button
               className={`globe-marker ${selectedStory?.id === story.id ? "selected" : ""}`}
               key={story.id}
               onClick={() => onSelectStory(story.id)}
+              ref={(element) => {
+                if (element) markerRefs.current.set(story.id, element);
+                else markerRefs.current.delete(story.id);
+              }}
               style={{
                 "--marker-color": themeColor[story.theme],
-                left: projection.x,
-                top: projection.y,
-                opacity: projection.visible ? 1 : 0.12,
-                transform: `translate(-50%, -50%) scale(${projection.scale})`,
-                pointerEvents: projection.visible ? "auto" : "none"
+                opacity: 0,
+                pointerEvents: "none"
               } as CSSProperties}
               type="button"
             >

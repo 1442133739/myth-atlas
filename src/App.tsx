@@ -22,7 +22,7 @@ export default function App() {
   const [era, setEra] = useState<MythEra>("all");
   const [search, setSearch] = useState("");
   const [selectedCountry, setSelectedCountry] = useState("");
-  const [showLabels, setShowLabels] = useState(true);
+  const [showLabels, setShowLabels] = useState(false);
   const [showConnections, setShowConnections] = useState(true);
   const [language, setLanguage] = useState<"zh" | "en">("zh");
   const [isExploring, setIsExploring] = useState(false);

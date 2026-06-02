@@ -83,6 +83,8 @@ button {
 
 .geo-label {
   position: absolute;
+  left: 0;
+  top: 0;
   padding: 3px 7px;
   border-radius: 8px;
   background: rgba(5, 8, 13, 0.46);
@@ -92,7 +94,8 @@ button {
   font-weight: 700;
   text-shadow: 0 0 10px rgba(0, 0, 0, 0.8);
   white-space: nowrap;
-  backdrop-filter: blur(8px);
+  contain: layout paint style;
+  will-change: transform, opacity;
 }
 
 .geo-label.ocean {
@@ -102,6 +105,8 @@ button {
 
 .globe-marker {
   position: absolute;
+  left: 0;
+  top: 0;
   width: 40px;
   height: 40px;
   display: grid;
@@ -110,10 +115,10 @@ button {
   border-radius: 50%;
   background: transparent;
   color: #fff;
-  filter: drop-shadow(0 0 12px var(--marker-color));
+  contain: layout paint style;
+  will-change: transform, opacity;
   transition:
-    opacity 0.18s ease,
-    filter 0.18s ease;
+    opacity 0.12s ease;
   pointer-events: auto;
 }
 
@@ -125,19 +130,19 @@ button {
   background: var(--marker-color);
   opacity: 0.2;
   box-shadow:
-    0 0 18px var(--marker-color),
-    0 0 34px var(--marker-color);
-  animation: marker-pulse 2.8s ease-in-out infinite;
+    0 0 10px var(--marker-color),
+    0 0 18px var(--marker-color);
 }
 
 .globe-marker.selected::before {
   inset: 1px;
   opacity: 0.38;
   border: 1px solid rgba(255, 255, 255, 0.48);
+  animation: marker-pulse 2.8s ease-in-out infinite;
 }
 
 .globe-marker:hover {
-  filter: drop-shadow(0 0 20px var(--marker-color));
+  text-shadow: 0 0 14px var(--marker-color);
 }
 
 .globe-hint {
@@ -208,7 +213,7 @@ button {
     360px 220px,
     420px 260px,
     520px 300px;
-  animation: drift-lines 22s linear infinite;
+  transform: translate3d(20px, -10px, 0);
 }
 
 @keyframes drift-lines {
@@ -954,8 +959,6 @@ button {
   place-items: center;
   border-radius: 50%;
   color: #fff;
-  filter: drop-shadow(0 0 12px var(--marker-color));
-  animation: marker-float 3s ease-in-out infinite;
 }
 
 .myth-marker::before {
@@ -998,6 +1001,7 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  contain: layout paint style;
 }
 
 @keyframes marker-float {
