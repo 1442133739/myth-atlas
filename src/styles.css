@@ -337,6 +337,18 @@ button {
   backdrop-filter: blur(16px);
 }
 
+.sidebar-body {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mobile-search-toggle {
+  display: none;
+}
+
 .search-box {
   height: 42px;
   display: flex;
@@ -669,6 +681,10 @@ button {
   color: rgba(247, 244, 234, 0.78);
   font-size: 14px;
   line-height: 1.65;
+}
+
+.story-body p {
+  margin: 10px 0;
 }
 
 .story-actions {
@@ -1126,14 +1142,63 @@ button {
   }
 
   .sidebar {
-    position: relative;
+    position: fixed;
     z-index: 10;
-    top: auto;
+    top: 76px;
+    left: 12px;
     right: auto;
     bottom: auto;
     width: auto;
-    margin: 132px 12px 360px;
-    max-height: 42vh;
+    max-width: calc(100vw - 24px);
+    margin: 0;
+    max-height: none;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .mobile-search-toggle {
+    min-height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    padding: 0 12px;
+    background: rgba(10, 12, 18, 0.82);
+    box-shadow: 0 14px 42px rgba(0, 0, 0, 0.38);
+    color: #fff7d6;
+    backdrop-filter: blur(14px);
+  }
+
+  .sidebar.collapsed .sidebar-body {
+    display: none;
+  }
+
+  .sidebar.open {
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    max-height: min(58vh, 520px);
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(11, 12, 18, 0.88);
+    box-shadow: 0 20px 80px rgba(0, 0, 0, 0.46);
+    backdrop-filter: blur(16px);
+  }
+
+  .sidebar.open .mobile-search-toggle {
+    width: 100%;
+    margin-bottom: 10px;
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: none;
+  }
+
+  .sidebar.open .sidebar-body {
+    overflow: hidden;
   }
 
   .story-card {
@@ -1142,7 +1207,7 @@ button {
     right: 12px;
     bottom: 118px;
     width: auto;
-    max-height: 48vh;
+    max-height: calc(100vh - 188px);
     grid-template-columns: 120px 1fr;
     transform: none;
     overflow-y: auto;
@@ -1201,8 +1266,11 @@ button {
   }
 
   .sidebar {
-    margin-top: 112px;
     padding: 10px;
+  }
+
+  .sidebar.collapsed {
+    padding: 0;
   }
 
   .story-grid {

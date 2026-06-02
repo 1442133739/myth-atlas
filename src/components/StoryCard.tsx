@@ -1,5 +1,6 @@
 import { Heart, Languages, MapPin, Play, Send, Sparkles, Volume2, X } from "lucide-react";
 import { useState } from "react";
+import { buildNarrationSegments, buildStoryBody } from "../storyPresentation";
 import type { AppState, Comment, PublicUser, Story } from "../types";
 
 const themeText: Record<Story["theme"], string> = {
@@ -52,14 +53,28 @@ export function StoryCard({
   const [commentBusy, setCommentBusy] = useState(false);
   const isFavorite = state.favoriteIds.includes(story.id);
   const title = language === "zh" ? story.titleZh : story.titleEn;
-  const summary = language === "zh" ? story.summaryZh : story.summaryEn;
+  const storyBody = buildStoryBody(story, language);
+
   const speakStory = () => {
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(`${title}。${summary}`);
-    utterance.lang = language === "zh" ? "zh-CN" : "en-US";
-    utterance.rate = 0.92;
-    window.speechSynthesis.speak(utterance);
+    const segments = buildNarrationSegments(story, language);
+
+    const speakSegment = (index: number) => {
+      const text = segments[index];
+      if (!text) return;
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = language === "zh" ? "zh-CN" : "en-US";
+      utterance.rate = index === 0 ? 0.82 : 0.9;
+      utterance.pitch = index === 0 ? 1.04 : 0.96;
+      utterance.volume = 1;
+      utterance.onend = () => window.setTimeout(() => speakSegment(index + 1), index === 0 ? 520 : 760);
+      window.speechSynthesis.speak(utterance);
+    };
+
+    speakSegment(0);
   };
+
   const submitComment = async () => {
     if (!commentText.trim()) return;
     setCommentBusy(true);
@@ -88,7 +103,12 @@ export function StoryCard({
           <span>{eraText[story.era]}</span>
           <span>{story.countryEn}</span>
         </div>
-        <p>{summary}</p>
+
+        <div className="story-body">
+          {storyBody.split(/\n\n+/).map((paragraph) => (
+            <p key={paragraph}>{paragraph}</p>
+          ))}
+        </div>
 
         <div className="story-actions">
           <button className="primary-action" onClick={speakStory} type="button">
@@ -97,7 +117,7 @@ export function StoryCard({
           </button>
           <button className="ghost-action" onClick={speakStory} type="button">
             <Volume2 size={16} />
-            朗读
+            有感情朗读
           </button>
           <button className={`ghost-action ${isFavorite ? "favorite" : ""}`} onClick={() => onToggleFavorite(story.id)} type="button">
             <Heart fill={isFavorite ? "currentColor" : "none"} size={16} />
